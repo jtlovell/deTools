@@ -1,0 +1,11 @@
+Package: deTools
+Type: Package
+Title: Some Tools to Make Differential Expression Analysis Easier
+Version: 0.1.0
+Author: JT Lovell
+Maintainer: JT Lovell <johntlovell@gmail.com>
+Description: Pipelines for analsis of differnetial gene expression via RNA-seq methods. Specifically, relies on routines in LIMMA and DESeq2. Provides methods for plotting and one-line anaylses of differential expression
+License: wp-2
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 6.0.1
