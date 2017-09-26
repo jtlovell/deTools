@@ -79,29 +79,29 @@
 #' @importFrom stats as.formula model.matrix p.adjust
 #' @export
 pipeDESeq2<-function(counts, info,
-                    formula = NULL, reduced = NULL, testNames = NULL,
-                    contrasts = NULL, contrastFormula = NULL, contrastNames = NULL,
-                    returnNormData = "none",
-                    geneIDs=NA, verbose=TRUE,
-                    fitType = "parametric", quiet = TRUE, betaPrior = F,
-                    modelMatrixType = "standard", parallel = F,
-                    minReplicatesForReplace = 7, ...){
-
+                     formula = NULL, reduced = NULL, testNames = NULL,
+                     contrasts = NULL, contrastFormula = NULL, contrastNames = NULL,
+                     returnNormData = "none",
+                     geneIDs=NA, verbose=TRUE,
+                     fitType = "parametric", quiet = TRUE, betaPrior = F,
+                     modelMatrixType = "standard", parallel = F,
+                     minReplicatesForReplace = 7, ...){
+  
   ######################
   # Set up the entire analysis
-
+  
   if(!requireNamespace("DESeq2", quietly = TRUE)){
     stop("install the DESeq2 package to run this function\n")
   }else{
     require("DESeq2")
   }
-
+  
   se<-SummarizedExperiment(assays = data.matrix(counts),
                            colData = DataFrame(info))
   if(is.na(geneIDs)){
     geneIDs<-rownames(se)
   }
-
+  
   ######################
   # Set up LRT
   if(!is.null(formula)){
@@ -115,11 +115,19 @@ pipeDESeq2<-function(counts, info,
               dropping testnames")
     }
     if(is.null(testNames)){
-      testNames<-1:ntests
+      testNames<-sapply(1:ntests, function(x){
+        f<-gsub("~","",formula[x], fixed = T)
+        r<-gsub("~","",reduced[x], fixed = T)
+        for(i in c("+","-")) f<-gsub(i,"",f, fixed = T)
+        for(i in c("+","-")) r<-gsub(i,"",r, fixed = T)
+        tn<-gsub(r,"",f,fixed = T)
+        tn<-gsub("*",".",tn,fixed = T)
+        return(tn)
+      })
     }
-
+    
     if(verbose)  cat("running Likelihood ratio tests for results for:\n")
-
+    
     runs<-lapply(1:ntests, function(x){
       if(verbose) cat(formula[x]," vs. ",reduced[x],"\n")
       if(quiet){
@@ -131,22 +139,32 @@ pipeDESeq2<-function(counts, info,
         des<-DESeq(dds, test="LRT", full = as.formula(formula[x]),
                    reduced= as.formula(reduced[x]), quiet = F)
       }
-
-      res<-data.frame(gene=geneIDs, results(des, ...),
+      
+      resname<-resultsNames(des)
+      cat("possible results to output:", paste(resname, collapse = ", "))
+      if(grepl(".",testNames[x], fixed = T)){
+        res2get<-resname[grepl(".",resname, fixed = T) &
+                           grepl(strsplit(testNames[x],".", fixed = T)[[1]][1],resname, fixed = T) & 
+                           grepl(strsplit(testNames[x],".", fixed = T)[[1]][2],resname, fixed = T)]
+      }else{
+        res2get<-resname[grep(testNames[x],resname)]
+      }
+      cat(" (testing", res2get,")\n")
+      res<-data.frame(gene=geneIDs, results(des, name = res2get),
                       stringsAsFactors = F)
       res$padj<-p.adjust(res$pvalue, method = "fdr")
       colnames(res)[-1]<-paste0(colnames(res)[-1],"_",testNames[x])
       return(res)
     })
-
+    
     runs.comb<-Reduce(function(x, y)
       merge(x, y, by = "gene", all = TRUE), runs)
-
-  }else{
-    runs.comb<-NULL
-  }
-
-
+    
+    }else{
+      runs.comb<-NULL
+    }
+  
+  
   ######################
   # Set up contrasts test
   if(!is.null(contrasts)){
@@ -158,7 +176,7 @@ pipeDESeq2<-function(counts, info,
     if(is.null(contrastNames)){
       contrastNames<-1:ncontrasts
     }
-
+    
     if(quiet){
       suppressMessages(dds<- DESeqDataSet(se = se, design = as.formula(contrastFormula)))
       des<-DESeq(dds, test="Wald",  quiet = T)
@@ -166,11 +184,11 @@ pipeDESeq2<-function(counts, info,
       dds<- DESeqDataSet(se = se, design = as.formula(contrastFormula))
       des<-DESeq(dds, test="Wald",  quiet = F)
     }
-
-
+    
+    
     conts<-lapply(1:ncontrasts, function(x){
       if(verbose) cat(contrasts[[x]],"\n")
-
+      
       res<-data.frame(gene=geneIDs,
                       results(des, contrast  = contrasts[[x]], ...),
                       stringsAsFactors = F)
@@ -178,13 +196,13 @@ pipeDESeq2<-function(counts, info,
       colnames(res)[-1]<-paste0(colnames(res)[-1],"_",contrastNames[x])
       return(res)
     })
-
+    
     cont.comb<-Reduce(function(x, y)
       merge(x, y, by = "gene", all = TRUE), conts)
   }else{
     cont.comb = NULL
   }
-
+  
   if(returnNormData == "rlog"){
     if(verbose) cat("conducting rlog tranformation\n")
     normDat <- rlog(counts)
@@ -199,6 +217,4 @@ pipeDESeq2<-function(counts, info,
   return(list(LRT_results = runs.comb,
               CONT_results = cont.comb,
               normData = normDat))
-}
-
-
+  }
